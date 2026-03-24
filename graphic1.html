@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Pixel Art Satellite</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:#000;display:flex;justify-content:center;align-items:center;min-height:100vh;}
+canvas{image-rendering:pixelated;image-rendering:crisp-edges;display:block;}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+const S=3,W=200,H=200;
+const cv=document.getElementById('c');
+cv.width=W*S;cv.height=H*S;
+const ctx=cv.getContext('2d');
+ctx.imageSmoothingEnabled=false;
+
+const buf=new Uint8ClampedArray(W*H*4);
+// Fill BG dark space
+for(let i=0;i<W*H;i++){buf[i*4]=5;buf[i*4+1]=3;buf[i*4+2]=12;buf[i*4+3]=255;}
+
+function px(x,y,r,g,b,a=255){
+  x=Math.round(x);y=Math.round(y);
+  if(x<0||x>=W||y<0||y>=H)return;
+  const i=(y*W+x)*4;
+  buf[i]=r;buf[i+1]=g;buf[i+2]=b;buf[i+3]=a;
+}
+
+// LCG random
+let seed=777;
+function rnd(){seed=(seed*1664525+1013904223)>>>0;return seed/4294967296;}
+
+// Check if point in rotated ellipse
+function inEll(px,py,cx,cy,rx,ry,ang){
+  const dx=px-cx,dy=py-cy;
+  const co=Math.cos(-ang),si=Math.sin(-ang);
+  const lx=dx*co-dy*si,ly=dx*si+dy*co;
+  return(lx*lx)/(rx*rx)+(ly*ly)/(ry*ry)<=1;
+}
+
+// ======= NEBULA =======
+const NX=102,NY=103,NA=-0.65;
+// Layers: outside to inside
+const NL=[
+  [96,42,55,12,95],   
+  [83,36,72,18,128],
+  [70,30,88,28,152],
+  [58,24,95,55,165],
+  [47,19,100,95,178],
+  [37,14,105,145,175],
+  [28,10,120,190,185],
+  [20,7,165,220,200],
+  [13,4,210,238,220],
+  [7,2,235,248,238],
+];
+
+for(let y=0;y<H;y++){
+  for(let x=0;x<W;x++){
+    for(let li=0;li<NL.length;li++){
+      const L=NL[li];
+      if(inEll(x,y,NX,NY,L[0],L[1],NA)){
+        px(x,y,L[2],L[3],L[4]);
+        break;
+      }
+    }
+  }
+}
+
+// Pixelate edges for organic look
+seed=31337;
+for(let pass=0;pass<4;pass++){
+  const La=NL[pass],Lb=NL[pass+1];
+  for(let y=1;y<H-1;y++){
+    for(let x=1;x<W-1;x++){
+      if(inEll(x,y,NX,NY,La[0]+2,La[1]+2,NA)&&
+         !inEll(x,y,NX,NY,La[0]-4,La[1]-4,NA)){
+        if(rnd()<0.42) px(x,y,Lb[2],Lb[3],Lb[4]);
+      }
+    }
+  }
+}
+
+// ======= STARS =======
+seed=11111;
+for(let i=0;i<200;i++){
+  const sx=Math.floor(rnd()*W),sy=Math.floor(rnd()*H);
+  if(inEll(sx,sy,NX,NY,22,8,NA)) continue;
+  const br=80+Math.floor(rnd()*120);
+  if(inEll(sx,sy,NX,NY,96,42,NA))
+    px(sx,sy,50,br,100,180);
+  else
+    px(sx,sy,70,br+30,120);
+}
+
+// Tiny dot stars
+seed=22222;
+for(let i=0;i<100;i++){
+  const sx=Math.floor(rnd()*W),sy=Math.floor(rnd()*H);
+  if(inEll(sx,sy,NX,NY,30,11,NA)) continue;
+  px(sx,sy,80,185,130);
+}
+
+// Sparkle cross stars
+function spk(sx,sy,r,g,b,dr,dg,db){
+  px(sx,sy,r,g,b);
+  px(sx-1,sy,dr,dg,db);px(sx+1,sy,dr,dg,db);
+  px(sx,sy-1,dr,dg,db);px(sx,sy+1,dr,dg,db);
+}
+// Green sparkles
+spk(16,25,180,255,210,110,220,165);
+spk(182,38,150,245,195,100,210,150);
+spk(160,170,175,255,208,110,220,165);
+spk(28,158,165,250,200,105,218,158);
+spk(190,105,155,248,195,100,210,150);
+spk(6,108,155,248,195,100,210,150);
+spk(98,6,155,248,195,100,210,150);
+spk(195,182,155,248,195,100,210,150);
+// Purple sparkles
+spk(18,78,195,145,250,155,105,220);
+spk(178,20,195,145,250,155,105,220);
+spk(182,148,195,145,250,155,105,220);
+spk(12,148,195,145,250,155,105,220);
+spk(108,195,195,145,250,155,105,220);
+
+// ======= SATELLITE =======
+const BCX=100,BCY=100;
+const SANG=-0.65;
+const CS=Math.cos(SANG),SN=Math.sin(SANG);
+
+function s2w(lx,ly){return[BCX+lx*CS-ly*SN,BCY+lx*SN+ly*CS];}
+
+// ---- SOLAR PANELS ----
+function panel(lcx,lcy,halfW,halfH){
+  const CELL=4;
+  const cols=Math.floor(halfW*2/CELL);
+  const rows=Math.floor(halfH*2/CELL);
+
+  for(let row=0;row<rows;row++){
+    for(let col=0;col<cols;col++){
+      const lx0=lcx-halfW+col*CELL;
+      const ly0=lcy-halfH+row*CELL;
+      // cell shading based on row
+      const rowT=row/rows;
+      const colT=col/cols;
+      // base colors: dark blue to medium blue
+      const r=Math.round(30+colT*30);
+      const g=Math.round(45+colT*40);
+      const b=Math.round(110+colT*70+rowT*20);
+      // cell interior (leave 1px border)
+      for(let dy=1;dy<CELL;dy++){
+        for(let dx=1;dx<CELL;dx++){
+          const [wx,wy]=s2w(lx0+dx,ly0+dy);
+          let cr=r,cg=g,cb=b;
+          // top-left highlight
+          if(dx===1&&dy===1){cr+=50;cg+=50;cb+=40;}
+          // bottom-right shadow
+          else if(dx===CELL-1&&dy===CELL-1){cr=Math.max(0,cr-15);cg=Math.max(0,cg-15);}
+          px(wx,wy,cr,cg,cb);
+        }
+      }
+      // Grid lines (dark)
+      for(let d=0;d<CELL;d++){
+        let [wx,wy]=s2w(lx0+d,ly0);px(wx,wy,10,14,45);
+        [wx,wy]=s2w(lx0,ly0+d);px(wx,wy,10,14,45);
+      }
+    }
+  }
+  // right & bottom border
+  for(let d=0;d<=rows*CELL;d++){
+    const [wx,wy]=s2w(lcx+halfW,lcy-halfH+d);px(wx,wy,10,14,45);
+  }
+  for(let d=0;d<=cols*CELL;d++){
+    const [wx,wy]=s2w(lcx-halfW+d,lcy+halfH);px(wx,wy,10,14,45);
+  }
+  // Outer black border (1px)
+  function borderLine(ax,ay,bx,by){
+    const dx=bx-ax,dy=by-ay;
+    const steps=Math.ceil(Math.max(Math.abs(dx),Math.abs(dy))*2.5);
+    for(let s=0;s<=steps;s++){
+      const t=s/steps;
+      const [wx,wy]=s2w(ax+dx*t,ay+dy*t);
+      px(wx,wy,8,8,20);
+    }
+  }
+  borderLine(lcx-halfW,lcy-halfH,lcx+halfW,lcy-halfH);
+  borderLine(lcx+halfW,lcy-halfH,lcx+halfW,lcy+halfH);
+  borderLine(lcx+halfW,lcy+halfH,lcx-halfW,lcy+halfH);
+  borderLine(lcx-halfW,lcy+halfH,lcx-halfW,lcy-halfH);
+}
+
+// Left-upper panel center: local (-55, 0)
+panel(-55,0,27,11);
+// Right-lower panel center: local (55, 0)
+panel(55,0,27,11);
+
+// ---- CONNECTORS ----
+function connLine(lx1,ly1,lx2,ly2){
+  const dx=lx2-lx1,dy=ly2-ly1;
+  const len=Math.sqrt(dx*dx+dy*dy);
+  const steps=Math.ceil(len*3);
+  for(let s=0;s<=steps;s++){
+    const t=s/steps;
+    const lx=lx1+dx*t,ly=ly1+dy*t;
+    for(let d=-1;d<=1;d++){
+      const [wx,wy]=s2w(lx,ly+d*0.5);
+      px(wx,wy,d===0?135:110,d===0?130:108,d===0?120:98);
+    }
+  }
+}
+connLine(-28,0,-18,0);
+connLine(18,0,28,0);
+
+// Connector joints
+function cjoint(lx,ly,sz=2.5){
+  for(let dy=-sz;dy<=sz;dy+=0.5){
+    for(let dx=-sz;dx<=sz;dx+=0.5){
+      if(Math.abs(dx)>sz||Math.abs(dy)>sz) continue;
+      const [wx,wy]=s2w(lx+dx,ly+dy);
+      const hi=dx<0&&dy<0;
+      const sh=dx>1&&dy>1;
+      px(wx,wy,hi?190:sh?80:145,hi?188:sh?80:142,hi?175:sh?92:132);
+    }
+  }
+  // outline
+  for(let d=-sz;d<=sz;d+=0.5){
+    let[wx,wy]=s2w(lx+d,ly-sz);px(wx,wy,60,58,70);
+    [wx,wy]=s2w(lx+d,ly+sz);px(wx,wy,60,58,70);
+    [wx,wy]=s2w(lx-sz,ly+d);px(wx,wy,60,58,70);
+    [wx,wy]=s2w(lx+sz,ly+d);px(wx,wy,60,58,70);
+  }
+}
+cjoint(-18,0);
+cjoint(18,0);
+
+// ---- BODY ----
+// Body: main cylinder from lx=-16 to lx=16, ly=-12 to ly=12
+// Cylinder shading: lit from top-left (negative ly = top)
+const BO=[20,20,32]; // outline
+const BS=[45,50,72]; // shadow
+const BD=[75,82,115]; // dark mid
+const BM=[108,115,150]; // mid
+const BL=[148,158,192]; // light
+const BH=[205,215,238]; // highlight
+
+for(let lx=-16;lx<=16;lx++){
+  for(let ly=-12;ly<=12;ly++){
+    const ny=ly/12;
+    if(Math.abs(ny)>1) continue;
+    const nx=lx/16;
+    let [r,g,b]=BM;
+    if(ny<-0.72)[r,g,b]=BH;
+    else if(ny<-0.45)[r,g,b]=BL;
+    else if(ny<-0.1)[r,g,b]=BM;
+    else if(ny<0.25)[r,g,b]=BD;
+    else if(ny<0.6)[r,g,b]=BS;
+    else[r,g,b]=[38,42,60];
+    // edge darkening
+    if(Math.abs(nx)>0.88)[r,g,b]=BS;
+    if(Math.abs(ny)>0.92)[r,g,b]=BO;
+    const[wx,wy]=s2w(lx,ly);
+    px(wx,wy,r,g,b);
+  }
+}
+
+// Top & bottom outlines
+for(let lx=-16;lx<=16;lx++){
+  let[wx,wy]=s2w(lx,-12);px(wx,wy,...BO);
+  [wx,wy]=s2w(lx,12);px(wx,wy,...BO);
+}
+// Left & right caps
+for(let ly=-12;ly<=12;ly++){
+  let[wx,wy]=s2w(-16,ly);px(wx,wy,...BO);
+  // Left cap rim (back face)
+  [wx,wy]=s2w(-17,ly);
+  px(wx,wy,ly<-4?70:45,ly<-4?75:50,ly<-4?100:70);
+  [wx,wy]=s2w(16,ly);px(wx,wy,...BO);
+  // Right cap rim (front face - nozzle end)
+  [wx,wy]=s2w(17,ly);
+  px(wx,wy,ly<-4?90:55,ly<-4?95:58,ly<-4?125:80);
+}
+
+// Ring/segment details on body
+for(const ringX of[-10,-5,0,5,10]){
+  for(let ly=-11;ly<=11;ly++){
+    const[wx,wy]=s2w(ringX,ly);
+    const ny=ly/11;
+    if(ny<-0.4) px(wx,wy,...BH);
+    else if(ny<0) px(wx,wy,...BL);
+    else px(wx,wy,...BS);
+  }
+}
+
+// Highlight stripe along top
+for(let lx=-15;lx<=15;lx++){
+  const[wx,wy]=s2w(lx,-10);
+  px(wx,wy,...BH);
+  const[wx2,wy2]=s2w(lx,-9);
+  px(wx2,wy2,...BL);
+}
+
+// ---- FRONT DISH / SPIRAL (left face = world top-left) ----
+const FX=-14; // local x of front face
+// Concentric rings
+for(let rad=10;rad>=1;rad-=1){
+  const steps=rad*10;
+  for(let i=0;i<steps;i++){
+    const ang=(i/steps)*Math.PI*2;
+    const lx=FX+Math.cos(ang)*rad*0.55;
+    const ly=Math.sin(ang)*rad;
+    const[wx,wy]=s2w(lx,ly);
+    const top=Math.sin(ang)<-0.3;
+    if(rad>=9) px(wx,wy,...(top?BL:BS));
+    else if(rad>=6) px(wx,wy,...(top?BM:BD));
+    else if(rad>=3) px(wx,wy,...(top?BD:BS));
+    else px(wx,wy,...BO);
+  }
+}
+// Spiral overlay
+for(let sp=0;sp<3;sp++){
+  const sa=sp*(Math.PI*2/3);
+  for(let t=0;t<=1;t+=0.015){
+    const ang=sa+t*Math.PI*1.8;
+    const rad=(1-t)*9;
+    const lx=FX+Math.cos(ang)*rad*0.55;
+    const ly=Math.sin(ang)*rad;
+    const[wx,wy]=s2w(lx,ly);
+    px(wx,wy,...BO);
+  }
+}
+// Center dot
+{const[wx,wy]=s2w(FX,0);px(wx,wy,30,32,48);}
+
+// ---- ANTENNAE ----
+function antenna(lx0,ly0,h){
+  // stick
+  for(let i=0;i<=h;i++){
+    const t=i/h;
+    const[wx,wy]=s2w(lx0+t*0.8,ly0-i);
+    px(wx,wy,145,148,165);
+    const[wx2,wy2]=s2w(lx0+t*0.8+0.5,ly0-i);
+    px(wx2,wy2,185,188,205);
+  }
+  // ball
+  const[bx,by]=s2w(lx0+0.8,ly0-h);
+  for(let dy=-4;dy<=4;dy++){
+    for(let dx=-4;dx<=4;dx++){
+      if(dx*dx+dy*dy<=16){
+        const hi=dx<0&&dy<-1;
+        const sh=dx>1&&dy>1;
+        px(bx+dx,by+dy,
+          hi?215:sh?85:155,
+          hi?218:sh?87:157,
+          hi?232:sh?102:175);
+      }
+    }
+  }
+  // ball outline
+  for(let a=0;a<Math.PI*2;a+=0.12){
+    px(bx+Math.round(Math.cos(a)*4),by+Math.round(Math.sin(a)*4),50,50,68);
+  }
+}
+antenna(3,-12,8);
+antenna(-3,-12,6);
+
+// ---- SMALL SPHERES (bottom of body) ----
+function sphere(lx,ly,rad){
+  const[cx,cy]=s2w(lx,ly);
+  for(let dy=-rad;dy<=rad;dy++){
+    for(let dx=-rad;dx<=rad;dx++){
+      if(dx*dx+dy*dy<=rad*rad){
+        const hi=dx<-1&&dy<-1;
+        const sh=dx>1&&dy>1;
+        px(cx+dx,cy+dy,
+          hi?210:sh?72:135,
+          hi?213:sh?74:137,
+          hi?228:sh?90:155);
+      }
+    }
+  }
+  for(let a=0;a<Math.PI*2;a+=0.1){
+    px(cx+Math.round(Math.cos(a)*rad),cy+Math.round(Math.sin(a)*rad),40,40,58);
+  }
+}
+sphere(-14,12,4);
+sphere(-16,7,3);
+
+// ---- NOZZLE (right end of body) ----
+for(let ly=-4;ly<=4;ly++){
+  for(let lx=16;lx<=21;lx++){
+    const t=(lx-16)/5;
+    const ny=ly/4;
+    const[wx,wy]=s2w(lx,ly);
+    let r,g,b;
+    if(Math.abs(ny)>0.85||t>0.9){r=BO[0];g=BO[1];b=BO[2];}
+    else if(ny<-0.3){r=BL[0];g=BL[1];b=BL[2];}
+    else{r=BD[0];g=BD[1];b=BD[2];}
+    px(wx,wy,r,g,b);
+  }
+}
+// nozzle borders
+for(let lx=16;lx<=21;lx++){
+  let[wx,wy]=s2w(lx,-4);px(wx,wy,...BO);
+  [wx,wy]=s2w(lx,4);px(wx,wy,...BO);
+}
+for(let ly=-4;ly<=4;ly++){
+  const[wx,wy]=s2w(21,ly);px(wx,wy,...BO);
+}
+
+// ======= BLIT =======
+const img=ctx.createImageData(W*S,H*S);
+for(let y=0;y<H;y++){
+  for(let x=0;x<W;x++){
+    const si=(y*W+x)*4;
+    for(let sy=0;sy<S;sy++){
+      for(let sx=0;sx<S;sx++){
+        const di=((y*S+sy)*(W*S)+(x*S+sx))*4;
+        img.data[di]=buf[si];
+        img.data[di+1]=buf[si+1];
+        img.data[di+2]=buf[si+2];
+        img.data[di+3]=255;
+      }
+    }
+  }
+}
+ctx.putImageData(img,0,0);
+</script>
+</body>
+</html>
