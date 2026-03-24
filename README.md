@@ -1,3 +1,4 @@
+# PENJELASAN
 ## 1. Apakah ini menggunakan aspek rasio 1:1?
 
 Iya, karena, nilai canvas dibuat dengan:
